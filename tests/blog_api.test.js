@@ -12,11 +12,7 @@ const blog = require('../models/blog')
 
 beforeEach(async () => {
     await Blog.deleteMany({})
-
-    const blogObjects = helper.initialBlogs
-        .map(blog => new Blog(blog))
-    const promiseArray = blogObjects.map(blog => blog.save())
-    await Promise.all(promiseArray)
+    await Blog.insertMany(helper.initialBlogs)
 })
 
 test('blogs are returned as json and correct amount', async () => {
@@ -93,11 +89,41 @@ test('title and url must be defined', async () => {
     expect(blogsAtEnd).toHaveLength(helper.initialBlogs.length)
 })
 
+test('a blog can be deleted', async () => {
+    const blogsAtStart = await helper.blogsInDb()
+    const blogToDelete = blogsAtStart[0]
 
+    await api
+        .delete(`/api/blogs/${blogToDelete.id}`)
+        .expect(204)
 
+    const blogsAtEnd = await helper.blogsInDb()
 
+    expect(blogsAtEnd).toHaveLength(
+        helper.initialBlogs.length - 1
+    )
 
+    const contents = blogsAtEnd.map(b => b.title)
 
+    expect(contents).not.toContain(blogToDelete.title)
+})
+
+test('the blogs likes can be updated', async () => {
+    const blogsAtStart = await helper.blogsInDb()
+    const blogToBeUpdeted = blogsAtStart[0]
+
+    const newLikes = (blogToBeUpdeted.likes || 0) + 10
+
+    await api
+        .put(`/api/blogs/${blogToBeUpdeted.id}`)
+        .send({ likes: newLikes })
+        .expect(200)
+
+    const blogsAtEnd = await helper.blogsInDb()
+    const updated = blogsAtEnd.find(b => b.id === blogToBeUpdeted.id)
+
+    expect(updated.likes).toEqual(newLikes)
+})
 
 afterAll(async () => {
     await mongoose.connection.close()
