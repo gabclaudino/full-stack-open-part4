@@ -2,6 +2,7 @@ const mongoose = require('mongoose')
 const supertest = require('supertest')
 const app = require('../app')
 const helper = require('./test_helper')
+const bcrypt = require('bcrypt')
 
 const api = supertest(app)
 
@@ -13,10 +14,25 @@ const User = require('../models/user')
 
 beforeEach(async () => {
     await Blog.deleteMany({})
-    await Blog.insertMany(helper.initialBlogs)
-
     await User.deleteMany({})
-    await User.insertMany(helper.initialUsers)
+
+    const passwordHash = await bcrypt.hash('sekret', 10)
+    const user = new User({
+        username: 'testuser',
+        name: 'Test User',
+        passwordHash
+    })
+    savedUser = await user.save()
+
+    const blogObjects = helper.initialBlogs.map(b => new Blog({ ...b, user: savedUser._id }))
+    const promiseArray = blogObjects.map(b => b.save())
+    await Promise.all(promiseArray)
+
+    const loginRes = await api
+        .post('/api/login')
+        .send({ username: 'testuser', password: 'sekret' })
+
+    authToken = loginRes.body.token
 })
 
 describe('blogs test', () => {
@@ -50,6 +66,7 @@ describe('blogs test', () => {
 
         await api
             .post('/api/blogs')
+            .set('Authorization', `Bearer ${authToken}`)
             .send(newBlog)
             .expect(201)
             .expect('Content-Type', /application\/json/)
@@ -72,6 +89,7 @@ describe('blogs test', () => {
 
         await api
             .post('/api/blogs')
+            .set('Authorization', `Bearer ${authToken}`)
             .send(newBlog)
             .expect(201)
 
@@ -88,6 +106,7 @@ describe('blogs test', () => {
 
         await api
             .post('/api/blogs')
+            .set('Authorization', `Bearer ${authToken}`)
             .send(newBlog)
             .expect(400)
 
@@ -101,6 +120,7 @@ describe('blogs test', () => {
 
         await api
             .delete(`/api/blogs/${blogToDelete.id}`)
+            .set('Authorization', `Bearer ${authToken}`)
             .expect(204)
 
         const blogsAtEnd = await helper.blogsInDb()
@@ -131,6 +151,28 @@ describe('blogs test', () => {
         expect(updated.likes).toEqual(newLikes)
     })
 
+    test('a blog cant be created if an invalid token is provide', async () => {
+        const blogsAtStart = await helper.blogsInDb()
+
+        const newBlog = {
+            title: "muito boa noite",
+            author: "Gabriel",
+            url: "www.sefoda.com",
+            likes: 92
+        }
+
+        const invalidToken = 'asdghsaghdasghdfsahgdsahfgdsfahgdfsaghgdsahgfdhsafgdgshafghdsagh'
+
+        await api
+            .post('/api/blogs')
+            .set('Authorization', `Bearer ${invalidToken}`)
+            .send(newBlog)
+            .expect(401)
+            .expect('Content-Type', /application\/json/)
+
+        const blogsAtEnd = await helper.blogsInDb()
+        expect(blogsAtEnd).toHaveLength(helper.initialBlogs.length)
+    })
 })
 
 describe('users tests', () => {

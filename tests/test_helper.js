@@ -37,7 +37,44 @@ const usersInDb = async () => {
     return users.map(u => u.toJSON())
 }
 
+const createUser = async (user) => {
+    const passwordHash = await bcrypt.hash(user.password, 10)
+
+    const userObj = new User({
+        username: user.username,
+        name: user.name,
+        passwordHash
+    })
+    return await userObj.save()
+}
+
+const createUserAndGetToken = async (api, user = initialUsers[0]) => {
+    await User.deleteOne({ username: user.username })
+    await createUser(user)
+
+    const res = await api
+        .post('/api/login')
+        .send({ username: user.username, password: user.password })
+
+    return res.body.token
+}
+
+const seedBlogsWithUser = async (userDoc) => {
+    const blogObjects = initialBlogs.map(b => new Blog({ ...b, user: userDoc._id }))
+    const saved = await Promise.all(blogObjects.map(b => b.save()))
+
+    userDoc.blogs = (userDoc.blogs || []).concat(saved.map(s => s._id))
+    await userDoc.save()
+
+    return saved
+}
 
 module.exports = {
-    initialBlogs, blogsInDb, initialUsers, usersInDb
+    initialBlogs,
+    blogsInDb,
+    initialUsers,
+    usersInDb,
+    createUser,
+    createUserAndGetToken,
+    seedBlogsWithUser
 }
